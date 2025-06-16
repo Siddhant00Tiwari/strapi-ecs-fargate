@@ -15,9 +15,7 @@ services:
       - db_data:/var/lib/postgresql/data
 
   strapi:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: siddocker467/strapi-app:latest
     container_name: strapi_app
     restart: always
     environment:
@@ -41,4 +39,3 @@ services:
 
 volumes:
   db_data:
-
