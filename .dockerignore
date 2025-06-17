@@ -6,3 +6,20 @@ docker-compose.yml
 .env
 README.md
 *.log
+
+# Terraform files and directories
+terraform/
+*.tf
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# GitHub Actions and workflows
+.github/
+
+# Git files
+.git/
+.gitignore
+
+# Documentation
+DEPLOYMENT.md
