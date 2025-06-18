@@ -1,4 +1,4 @@
-name: Build and Deploy Strapi to EC2
+name: Build and Deploy Strapi to ECS Fargate
 
 on:
   push:
@@ -41,11 +41,19 @@ jobs:
         run: |
           cd terraform
           cat > terraform.tfvars << EOF
-          aws_region    = "${{ secrets.AWS_REGION }}"
-          ami_id        = "${{ secrets.AWS_AMI_ID }}"
-          instance_type = "${{ secrets.AWS_INSTANCE_TYPE }}"
-          key_name      = "${{ secrets.AWS_KEY_NAME }}"
-          vpc_id        = "${{ secrets.AWS_VPC_ID }}"
+          region              = "${{ secrets.AWS_REGION }}"
+          vpc_id              = "${{ secrets.AWS_VPC_ID }}"
+          ecs_exec_role_arn   = "${{ secrets.AWS_ECS_EXEC_ROLE_ARN }}"
+          ecs_task_role_arn   = "${{ secrets.AWS_ECS_TASK_ROLE_ARN }}"
+          strapi_image        = "${{ env.DOCKER_IMAGE }}"
+          db_image            = "postgres:15"
+          db_name             = "${{ secrets.DB_NAME }}"
+          db_user             = "${{ secrets.DB_USER }}"
+          db_pass             = "${{ secrets.DB_PASSWORD }}"
+          app_keys            = "${{ secrets.STRAPI_APP_KEYS }}"
+          api_token_salt      = "${{ secrets.STRAPI_API_TOKEN_SALT }}"
+          admin_jwt_secret    = "${{ secrets.STRAPI_ADMIN_JWT_SECRET }}"
+          jwt_secret          = "${{ secrets.STRAPI_JWT_SECRET }}"
           EOF
 
       - name: 📁 Setup Terraform working directory
@@ -63,8 +71,29 @@ jobs:
           cd terraform
           terraform apply -auto-approve tfplan
 
+      - name: 📋 Display Resource IDs for Import
+        run: |
+          cd terraform
+          echo "🔍 Resource IDs for Local Terraform Import:"
+          echo "=========================================="
+          echo ""
+          echo "ECS Cluster ID:"
+          terraform output -raw ecs_cluster_id
+          echo ""
+          echo "ECS Service ID:"
+          terraform output -raw ecs_service_id
+          echo ""
+          echo "ECS Task Definition ARN:"
+          terraform output -raw ecs_task_definition_arn
+          echo ""
+          echo "Security Group ID:"
+          terraform output -raw security_group_id
+          echo ""
+          echo "=========================================="
+
       - name: ✅ Deployment Status
         run: |
           echo "✅ Deployment completed successfully!"
           echo "Docker image: ${{ env.DOCKER_IMAGE }}"
-          echo "EC2 instance should be running with the new image" 
+          echo "ECS Fargate service should be running with the new image"
+          echo "Check the ECS console for service status" 
