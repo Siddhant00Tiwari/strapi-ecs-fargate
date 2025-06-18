@@ -3,11 +3,6 @@ output "ecs_cluster" {
   value       = aws_ecs_cluster.cluster.name
 }
 
-output "ecs_cluster_arn" {
-  description = "The ARN of the ECS cluster"
-  value       = aws_ecs_cluster.cluster.arn
-}
-
 output "ecs_cluster_id" {
   description = "The ID of the ECS cluster - use for terraform import"
   value       = aws_ecs_cluster.cluster.id
@@ -16,11 +11,6 @@ output "ecs_cluster_id" {
 output "ecs_service" {
   description = "The ECS Service name"
   value       = aws_ecs_service.strapi.name
-}
-
-output "ecs_service_arn" {
-  description = "The ARN of the ECS service"
-  value       = aws_ecs_service.strapi.arn
 }
 
 output "ecs_service_id" {
@@ -46,11 +36,6 @@ output "security_group" {
 output "security_group_id" {
   description = "The ID of the security group - use for terraform import"
   value       = aws_security_group.sg.id
-}
-
-output "security_group_arn" {
-  description = "The ARN of the security group"
-  value       = aws_security_group.sg.arn
 }
 
 output "vpc_id" {
