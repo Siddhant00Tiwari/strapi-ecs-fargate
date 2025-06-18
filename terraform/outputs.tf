@@ -33,11 +33,6 @@ output "ecs_task_definition" {
   value       = aws_ecs_task_definition.strapi.family
 }
 
-output "ecs_task_definition_arn" {
-  description = "The ARN of the ECS task definition - use for terraform import"
-  value       = aws_ecs_task_definition.strapi.arn
-}
-
 output "ecs_task_definition_revision" {
   description = "The revision of the ECS task definition"
   value       = aws_ecs_task_definition.strapi.revision
@@ -113,7 +108,6 @@ output "import_commands" {
   value = {
     ecs_cluster = "terraform import aws_ecs_cluster.cluster ${aws_ecs_cluster.cluster.id}"
     ecs_service = "terraform import aws_ecs_service.strapi ${aws_ecs_service.strapi.id}"
-    task_definition = "terraform import aws_ecs_task_definition.strapi ${aws_ecs_task_definition.strapi.arn}"
     security_group = "terraform import aws_security_group.sg ${aws_security_group.sg.id}"
   }
 }
@@ -123,7 +117,6 @@ output "resource_ids" {
   value = {
     ecs_cluster_id = aws_ecs_cluster.cluster.id
     ecs_service_id = aws_ecs_service.strapi.id
-    task_definition_arn = aws_ecs_task_definition.strapi.arn
     security_group_id = aws_security_group.sg.id
   }
 }

@@ -83,9 +83,6 @@ jobs:
           echo "ECS Service ID:"
           terraform output -raw ecs_service_id
           echo ""
-          echo "ECS Task Definition ARN:"
-          terraform output -raw ecs_task_definition_arn
-          echo ""
           echo "Security Group ID:"
           terraform output -raw security_group_id
           echo ""
