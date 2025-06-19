@@ -12,6 +12,11 @@ data "aws_subnets" "public" {
 
 resource "aws_ecs_cluster" "cluster" {
   name = "strapi-cluster"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 resource "aws_security_group" "sg" {
@@ -35,6 +40,11 @@ resource "aws_security_group" "sg" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "ecs_strapi" {
+  name              = "/ecs/strapi"
+  retention_in_days = 14
+}
+
 resource "aws_ecs_task_definition" "strapi" {
   family                   = "strapi-task"
   requires_compatibilities = ["FARGATE"]
@@ -55,6 +65,14 @@ resource "aws_ecs_task_definition" "strapi" {
         { name = "POSTGRES_USER", value = var.db_user },
         { name = "POSTGRES_PASSWORD", value = var.db_pass }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_strapi.name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs/postgres"
+        }
+      }
     },
     {
       name         = "strapi"
@@ -74,6 +92,14 @@ resource "aws_ecs_task_definition" "strapi" {
         { name = "ADMIN_JWT_SECRET", value = var.admin_jwt_secret },
         { name = "JWT_SECRET", value = var.jwt_secret }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_strapi.name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs/strapi"
+        }
+      }
     }
   ])
 }
@@ -89,5 +115,95 @@ resource "aws_ecs_service" "strapi" {
     subnets          = data.aws_subnets.public.ids
     security_groups  = [aws_security_group.sg.id]
     assign_public_ip = true
+  }
+}
+
+resource "aws_cloudwatch_dashboard" "ecs_strapi" {
+  dashboard_name = "strapi-ecs-dashboard"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric",
+        x = 0,
+        y = 0,
+        width = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            [ "AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.cluster.name, "ServiceName", aws_ecs_service.strapi.name ],
+            [ ".", "MemoryUtilization", ".", ".", ".", "." ]
+          ],
+          period = 300,
+          stat = "Average",
+          region = var.region,
+          title = "ECS Service CPU & Memory Utilization"
+        }
+      },
+      {
+        type = "metric",
+        x = 0,
+        y = 6,
+        width = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            [ "ECS/ContainerInsights", "TaskCount", "ClusterName", aws_ecs_cluster.cluster.name ]
+          ],
+          period = 300,
+          stat = "Average",
+          region = var.region,
+          title = "ECS Task Count (Container Insights)"
+        }
+      },
+      {
+        type = "metric",
+        x = 0,
+        y = 12,
+        width = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            [ "ECS/ContainerInsights", "NetworkRxBytes", "ClusterName", aws_ecs_cluster.cluster.name ],
+            [ ".", "NetworkTxBytes", ".", "." ]
+          ],
+          period = 300,
+          stat = "Sum",
+          region = var.region,
+          title = "ECS Network In/Out (Container Insights)"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "ecs_high_cpu" {
+  alarm_name          = "strapi-ecs-high-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "This alarm triggers if ECS CPU utilization > 80% for 10 minutes."
+  dimensions = {
+    ClusterName = aws_ecs_cluster.cluster.name
+    ServiceName = aws_ecs_service.strapi.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "ecs_high_memory" {
+  alarm_name          = "strapi-ecs-high-memory"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "MemoryUtilization"
+  namespace           = "AWS/ECS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "This alarm triggers if ECS Memory utilization > 80% for 10 minutes."
+  dimensions = {
+    ClusterName = aws_ecs_cluster.cluster.name
+    ServiceName = aws_ecs_service.strapi.name
   }
 }

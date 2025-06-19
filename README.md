@@ -1,61 +1,357 @@
-# 🚀 Getting started with Strapi
+# 🚀 Strapi ECS Fargate Deployment
 
-Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
+This repository contains a Strapi application deployed to AWS ECS Fargate using Terraform and GitHub Actions.
 
-### `develop`
+## 📋 Overview
 
-Start your Strapi application with autoReload enabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-develop)
+This project demonstrates how to deploy a Strapi CMS application to AWS ECS Fargate using:
+- **Terraform** for infrastructure as code
+- **GitHub Actions** for CI/CD automation
+- **Docker** for containerization
+- **AWS ECS Fargate** for serverless container orchestration
 
+## 🔗 Original Repository
+
+This deployment is based on the original Strapi repository with GitHub Actions:
+- **Original Repo**: [Strapi GitHub Repository](https://github.com/Siddhant00Tiwari/strapi-ecs-fargate.git)
+- **GitHub Actions**: [Strapi GitHub Actions](https://github.com/Siddhant00Tiwari/strapi-ecs-fargate/actions)
+
+## 🏗️ Infrastructure (Terraform)
+
+The Terraform configuration creates a complete ECS Fargate deployment with the following resources:
+
+### Main Infrastructure Components
+
+```hcl
+# ECS Cluster
+resource "aws_ecs_cluster" "cluster" {
+  name = "strapi-cluster"
+}
+
+# Security Group
+resource "aws_security_group" "sg" {
+  name        = "strapi-fargate-sg"
+  description = "Allow HTTP from public, internal DB access"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "Strapi HTTP"
+    from_port   = 1337
+    to_port     = 1337
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# ECS Task Definition
+resource "aws_ecs_task_definition" "strapi" {
+  family                   = "strapi-task"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "512"
+  memory                   = "1024"
+  execution_role_arn       = var.ecs_exec_role_arn
+  task_role_arn            = var.ecs_task_role_arn
+
+  container_definitions = jsonencode([
+    {
+      name         = "postgres"
+      image        = var.db_image
+      essential    = true
+      portMappings = [{ containerPort = 5432, hostPort = 5432 }]
+      environment = [
+        { name = "POSTGRES_DB", value = var.db_name },
+        { name = "POSTGRES_USER", value = var.db_user },
+        { name = "POSTGRES_PASSWORD", value = var.db_pass }
+      ]
+    },
+    {
+      name         = "strapi"
+      image        = var.strapi_image
+      essential    = true
+      dependsOn    = [{ containerName = "postgres", condition = "START" }]
+      portMappings = [{ containerPort = 1337, hostPort = 1337 }]
+      environment = [
+        { name = "DATABASE_CLIENT", value = "postgres" },
+        { name = "DATABASE_HOST", value = "127.0.0.1" },
+        { name = "DATABASE_PORT", value = "5432" },
+        { name = "DATABASE_NAME", value = var.db_name },
+        { name = "DATABASE_USERNAME", value = var.db_user },
+        { name = "DATABASE_PASSWORD", value = var.db_pass },
+        { name = "APP_KEYS", value = var.app_keys },
+        { name = "API_TOKEN_SALT", value = var.api_token_salt },
+        { name = "ADMIN_JWT_SECRET", value = var.admin_jwt_secret },
+        { name = "JWT_SECRET", value = var.jwt_secret }
+      ]
+    }
+  ])
+}
+
+# ECS Service
+resource "aws_ecs_service" "strapi" {
+  name            = "strapi-service"
+  cluster         = aws_ecs_cluster.cluster.id
+  task_definition = aws_ecs_task_definition.strapi.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = data.aws_subnets.public.ids
+    security_groups  = [aws_security_group.sg.id]
+    assign_public_ip = true
+  }
+}
 ```
+
+### Key Features:
+- **Multi-container setup**: Strapi + PostgreSQL in the same task
+- **Fargate launch type**: Serverless container execution
+- **Public subnets**: Auto-discovers public subnets in the VPC
+- **Security groups**: Allows HTTP access on port 1337
+- **Environment variables**: Secure configuration via GitHub secrets
+
+## 🔄 CI/CD Pipeline (GitHub Actions)
+
+The GitHub Actions workflow automates the entire deployment process:
+
+### Workflow Steps
+
+```yaml
+name: Build and Deploy Strapi to ECS Fargate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Checkout code
+      - name: 🧾 Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Docker authentication
+      - name: 🔐 Set up Docker auth
+        run: echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      # 3. Build and push Docker image
+      - name: 🏗️ Build Docker image
+        run: docker build -t $DOCKER_IMAGE .
+      - name: 📤 Push to Docker Hub
+        run: docker push $DOCKER_IMAGE
+
+      # 4. Terraform setup
+      - name: 🧰 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      # 5. AWS configuration
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 6. Create terraform.tfvars from secrets
+      - name: 📝 Create terraform.tfvars from secrets
+        run: |
+          cd terraform
+          cat > terraform.tfvars << EOF
+          region              = "${{ secrets.AWS_REGION }}"
+          vpc_id              = "${{ secrets.AWS_VPC_ID }}"
+          ecs_exec_role_arn   = "${{ secrets.AWS_ECS_EXEC_ROLE_ARN }}"
+          ecs_task_role_arn   = "${{ secrets.AWS_ECS_TASK_ROLE_ARN }}"
+          strapi_image        = "${{ env.DOCKER_IMAGE }}"
+          db_image            = "postgres:15"
+          db_name             = "${{ secrets.DB_NAME }}"
+          db_user             = "${{ secrets.DB_USER }}"
+          db_pass             = "${{ secrets.DB_PASSWORD }}"
+          app_keys            = "${{ secrets.STRAPI_APP_KEYS }}"
+          api_token_salt      = "${{ secrets.STRAPI_API_TOKEN_SALT }}"
+          admin_jwt_secret    = "${{ secrets.STRAPI_ADMIN_JWT_SECRET }}"
+          jwt_secret          = "${{ secrets.STRAPI_JWT_SECRET }}"
+          EOF
+
+      # 7. Deploy infrastructure
+      - name: 📁 Setup Terraform working directory
+        run: cd terraform && terraform init
+      - name: 📋 Terraform Plan
+        run: cd terraform && terraform plan -out=tfplan
+      - name: 🚀 Terraform Apply
+        run: cd terraform && terraform apply -auto-approve tfplan
+
+      # 8. Display resource IDs
+      - name: 📋 Display Resource IDs for Import
+        run: |
+          cd terraform
+          echo "🔍 Resource IDs for Local Terraform Import:"
+          echo "=========================================="
+          echo ""
+          echo "ECS Cluster ID:"
+          terraform output -raw ecs_cluster_id
+          echo ""
+          echo "ECS Service ID:"
+          terraform output -raw ecs_service_id
+          echo ""
+          echo "Security Group ID:"
+          terraform output -raw security_group_id
+          echo ""
+          echo "=========================================="
+```
+
+### Key Features:
+- **Automated builds**: Builds Docker image on every push
+- **Secure secrets**: Uses GitHub secrets for sensitive data
+- **Infrastructure as Code**: Terraform manages all AWS resources
+- **Resource tracking**: Displays resource IDs for local management
+- **Manual triggers**: Can be triggered manually via GitHub UI
+
+## 🔐 Required GitHub Secrets
+
+Configure these secrets in your GitHub repository (Settings → Secrets and variables → Actions):
+
+### AWS Configuration
+- `AWS_ACCESS_KEY_ID` - AWS access key
+- `AWS_SECRET_ACCESS_KEY` - AWS secret key
+- `AWS_REGION` - AWS region (e.g., "us-east-1")
+- `AWS_VPC_ID` - VPC ID for deployment
+- `AWS_ECS_EXEC_ROLE_ARN` - ECS Task Execution Role ARN
+- `AWS_ECS_TASK_ROLE_ARN` - ECS Task Role ARN
+
+### Database Configuration
+- `DB_NAME` - PostgreSQL database name
+- `DB_USER` - PostgreSQL username
+- `DB_PASSWORD` - PostgreSQL password
+
+### Strapi Configuration
+- `STRAPI_APP_KEYS` - Strapi APP_KEYS (comma-separated)
+- `STRAPI_API_TOKEN_SALT` - Strapi API_TOKEN_SALT
+- `STRAPI_ADMIN_JWT_SECRET` - Strapi ADMIN_JWT_SECRET
+- `STRAPI_JWT_SECRET` - Strapi JWT_SECRET
+
+### Docker Hub
+- `DOCKERHUB_USERNAME` - Docker Hub username
+- `DOCKERHUB_PASSWORD` - Docker Hub password
+
+## 🌐 Accessing Your Application
+
+### After Deployment
+
+1. **Get the Public IP**:
+   - Go to AWS Console → ECS → Clusters → strapi-cluster
+   - Click on the "strapi-service"
+   - Find the running task and note the public IP
+
+2. **Access Strapi**:
+   ```
+   http://<PUBLIC-IP>:1337
+   ```
+
+3. **Access Strapi Admin**:
+   ```
+   http://<PUBLIC-IP>:1337/admin
+   ```
+
+### First Time Setup
+
+1. Navigate to `http://<PUBLIC-IP>:1337/admin`
+2. Create your first admin user
+3. Configure your Strapi application
+
+## 🛠️ Local Development
+
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+- Docker (optional)
+
+### Development Commands
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run develop
-# or
-yarn develop
-```
 
-### `start`
-
-Start your Strapi application with autoReload disabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-start)
-
-```
-npm run start
-# or
-yarn start
-```
-
-### `build`
-
-Build your admin panel. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-build)
-
-```
+# Build for production
 npm run build
-# or
-yarn build
+
+# Start production server
+npm run start
 ```
 
-## ⚙️ Deployment
+## 🔧 Troubleshooting
 
-Strapi gives you many possible deployment options for your project including [Strapi Cloud](https://cloud.strapi.io). Browse the [deployment section of the documentation](https://docs.strapi.io/dev-docs/deployment) to find the best solution for your use case.
+### Common Issues
 
+1. **ECS Service Not Starting**
+   - Check ECS task logs in AWS Console
+   - Verify all environment variables are set
+   - Check security group allows port 1337
+
+2. **Database Connection Issues**
+   - Verify PostgreSQL container is running
+   - Check database credentials in GitHub secrets
+   - Ensure containers can communicate internally
+
+3. **GitHub Actions Failures**
+   - Verify all required secrets are configured
+   - Check AWS credentials and permissions
+   - Ensure VPC and subnets exist
+
+### Useful Commands
+
+```bash
+# Check ECS service status
+aws ecs describe-services --cluster strapi-cluster --services strapi-service
+
+# View task logs
+aws logs describe-log-groups --log-group-name-prefix /ecs/strapi-task
+
+# Check security group rules
+aws ec2 describe-security-groups --group-ids sg-xxxxxxxxx
 ```
-yarn strapi deploy
-```
 
-## 📚 Learn more
+## 📊 Monitoring
 
-- [Resource center](https://strapi.io/resource-center) - Strapi resource center.
-- [Strapi documentation](https://docs.strapi.io) - Official Strapi documentation.
-- [Strapi tutorials](https://strapi.io/tutorials) - List of tutorials made by the core team and the community.
-- [Strapi blog](https://strapi.io/blog) - Official Strapi blog containing articles made by the Strapi team and the community.
-- [Changelog](https://strapi.io/changelog) - Find out about the Strapi product updates, new features and general improvements.
+- **ECS Console**: Monitor service health and task status
+- **CloudWatch Logs**: View application and container logs
+- **CloudWatch Metrics**: Monitor CPU, memory, and network usage
 
-Feel free to check out the [Strapi GitHub repository](https://github.com/strapi/strapi). Your feedback and contributions are welcome!
+## 🔒 Security Considerations
 
-## ✨ Community
+- All sensitive data is stored as GitHub secrets
+- Security group restricts access to necessary ports only
+- Database credentials are not exposed in logs
+- Use HTTPS in production (requires additional setup)
 
-- [Discord](https://discord.strapi.io) - Come chat with the Strapi community including the core team.
-- [Forum](https://forum.strapi.io/) - Place to discuss, ask questions and find answers, show your Strapi project and get feedback or just talk with other Community members.
-- [Awesome Strapi](https://github.com/strapi/awesome-strapi) - A curated list of awesome things related to Strapi.
+## 💰 Cost Optimization
+
+- ECS Fargate charges based on actual resource usage
+- Consider using Spot instances for non-critical workloads
+- Monitor CloudWatch metrics for resource optimization
+- Set up billing alerts to track costs
+
+## 📚 Additional Resources
+
+- [Strapi Documentation](https://docs.strapi.io/)
+- [AWS ECS Documentation](https://docs.aws.amazon.com/ecs/)
+- [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
 
 ---
 
-<sub>🤫 Psst! [Strapi is hiring](https://strapi.io/careers).</sub>
+**Note**: This deployment is designed for development and staging environments. For production use, consider additional security measures, monitoring, and backup strategies. 

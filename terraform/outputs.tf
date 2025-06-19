@@ -91,8 +91,8 @@ output "deployment_info" {
 output "import_commands" {
   description = "Terraform import commands to run locally"
   value = {
-    ecs_cluster = "terraform import aws_ecs_cluster.cluster ${aws_ecs_cluster.cluster.id}"
-    ecs_service = "terraform import aws_ecs_service.strapi ${aws_ecs_service.strapi.id}"
+    ecs_cluster    = "terraform import aws_ecs_cluster.cluster ${aws_ecs_cluster.cluster.id}"
+    ecs_service    = "terraform import aws_ecs_service.strapi ${aws_ecs_service.strapi.id}"
     security_group = "terraform import aws_security_group.sg ${aws_security_group.sg.id}"
   }
 }
@@ -100,8 +100,28 @@ output "import_commands" {
 output "resource_ids" {
   description = "All resource IDs for importing into local Terraform state"
   value = {
-    ecs_cluster_id = aws_ecs_cluster.cluster.id
-    ecs_service_id = aws_ecs_service.strapi.id
+    ecs_cluster_id    = aws_ecs_cluster.cluster.id
+    ecs_service_id    = aws_ecs_service.strapi.id
     security_group_id = aws_security_group.sg.id
   }
+}
+
+output "cloudwatch_log_group_name" {
+  description = "The name of the CloudWatch log group for ECS logs."
+  value       = aws_cloudwatch_log_group.ecs_strapi.name
+}
+
+output "cloudwatch_dashboard_url" {
+  description = "URL to the CloudWatch dashboard for ECS monitoring."
+  value       = "https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards:name=${aws_cloudwatch_dashboard.ecs_strapi.dashboard_name}"
+}
+
+output "cloudwatch_cpu_alarm_arn" {
+  description = "ARN of the high CPU utilization alarm."
+  value       = aws_cloudwatch_metric_alarm.ecs_high_cpu.arn
+}
+
+output "cloudwatch_memory_alarm_arn" {
+  description = "ARN of the high memory utilization alarm."
+  value       = aws_cloudwatch_metric_alarm.ecs_high_memory.arn
 }
