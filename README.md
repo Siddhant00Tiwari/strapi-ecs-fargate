@@ -23,9 +23,13 @@ The Terraform configuration creates a complete ECS Fargate deployment with the f
 ### Main Infrastructure Components
 
 ```hcl
-# ECS Cluster
+# ECS Cluster with Container Insights
 resource "aws_ecs_cluster" "cluster" {
   name = "strapi-cluster"
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 # Security Group
@@ -108,6 +112,104 @@ resource "aws_ecs_service" "strapi" {
     assign_public_ip = true
   }
 }
+
+# CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "ecs_strapi" {
+  name              = "/ecs/strapi"
+  retention_in_days = 14
+}
+
+# CloudWatch Dashboard
+resource "aws_cloudwatch_dashboard" "ecs_strapi" {
+  dashboard_name = "strapi-ecs-dashboard"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric",
+        x = 0,
+        y = 0,
+        width = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            [ "AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.cluster.name, "ServiceName", aws_ecs_service.strapi.name ],
+            [ ".", "MemoryUtilization", ".", ".", ".", "." ]
+          ],
+          period = 300,
+          stat = "Average",
+          region = var.region,
+          title = "ECS Service CPU & Memory Utilization"
+        }
+      },
+      {
+        type = "metric",
+        x = 0,
+        y = 6,
+        width = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            [ "ECS/ContainerInsights", "TaskCount", "ClusterName", aws_ecs_cluster.cluster.name ]
+          ],
+          period = 300,
+          stat = "Average",
+          region = var.region,
+          title = "ECS Task Count (Container Insights)"
+        }
+      },
+      {
+        type = "metric",
+        x = 0,
+        y = 12,
+        width = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            [ "ECS/ContainerInsights", "NetworkRxBytes", "ClusterName", aws_ecs_cluster.cluster.name ],
+            [ ".", "NetworkTxBytes", ".", "." ]
+          ],
+          period = 300,
+          stat = "Sum",
+          region = var.region,
+          title = "ECS Network In/Out (Container Insights)"
+        }
+      }
+    ]
+  })
+}
+
+# CloudWatch Alarms
+resource "aws_cloudwatch_metric_alarm" "ecs_high_cpu" {
+  alarm_name          = "strapi-ecs-high-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "This alarm triggers if ECS CPU utilization > 80% for 10 minutes."
+  dimensions = {
+    ClusterName = aws_ecs_cluster.cluster.name
+    ServiceName = aws_ecs_service.strapi.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "ecs_high_memory" {
+  alarm_name          = "strapi-ecs-high-memory"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "MemoryUtilization"
+  namespace           = "AWS/ECS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "This alarm triggers if ECS Memory utilization > 80% for 10 minutes."
+  dimensions = {
+    ClusterName = aws_ecs_cluster.cluster.name
+    ServiceName = aws_ecs_service.strapi.name
+  }
+}
 ```
 
 ### Key Features:
@@ -116,6 +218,55 @@ resource "aws_ecs_service" "strapi" {
 - **Public subnets**: Auto-discovers public subnets in the VPC
 - **Security groups**: Allows HTTP access on port 1337
 - **Environment variables**: Secure configuration via GitHub secrets
+- **CloudWatch monitoring**: Logs, metrics, dashboard, and alarms
+- **Remote state**: S3 backend with native state locking (object lock enabled)
+
+## 📊 Monitoring & Observability
+
+### CloudWatch Resources Explained
+
+- **CloudWatch Log Group (`aws_cloudwatch_log_group.ecs_strapi`)**
+  - Stores all logs from your ECS containers (Strapi and Postgres) in `/ecs/strapi`.
+  - Retention is set to 14 days (customizable).
+
+- **CloudWatch Dashboard (`aws_cloudwatch_dashboard.ecs_strapi`)**
+  - Visualizes key metrics for your ECS service and cluster.
+  - **Widgets include:**
+    - **CPU & Memory Utilization:** Standard ECS metrics (AWS/ECS namespace)
+    - **Task Count:** From Container Insights (ECS/ContainerInsights namespace)
+    - **Network In/Out:** From Container Insights (ECS/ContainerInsights namespace)
+  - Lets you monitor service health, scaling, and network activity at a glance.
+
+- **CloudWatch Alarms (`aws_cloudwatch_metric_alarm.ecs_high_cpu`, `ecs_high_memory`)**
+  - Alert you if CPU or memory utilization exceeds 80% for 10 minutes.
+  - Can be connected to SNS or other notification systems for alerting.
+
+- **Container Insights**
+  - Enabled on the ECS cluster for enhanced metrics (TaskCount, NetworkRxBytes, NetworkTxBytes, etc.).
+  - Metrics are available in the `ECS/ContainerInsights` namespace and used in the dashboard.
+
+### How to View
+- Go to [CloudWatch Dashboards](https://console.aws.amazon.com/cloudwatch/home?region=ap-south-1#dashboards:name=strapi-ecs-dashboard)
+- You will see widgets for CPU/Memory, Task Count, and Network metrics.
+- For logs, go to CloudWatch Logs and search for `/ecs/strapi`.
+
+### Enabling Container Insights
+Container Insights is enabled by default in the Terraform ECS cluster resource:
+```hcl
+resource "aws_ecs_cluster" "cluster" {
+  name = "strapi-cluster"
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+}
+```
+If you need to enable it manually:
+- AWS Console: ECS > Clusters > strapi-cluster > Monitoring > Enable Container Insights
+- AWS CLI: 
+  ```bash
+  aws ecs update-cluster-settings --cluster strapi-cluster --settings name=containerInsights,value=enabled --region ap-south-1
+  ```
 
 ## 🔄 CI/CD Pipeline (GitHub Actions)
 
@@ -351,6 +502,7 @@ aws ec2 describe-security-groups --group-ids sg-xxxxxxxxx
 - [AWS ECS Documentation](https://docs.aws.amazon.com/ecs/)
 - [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [AWS Container Insights](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Container-Insights.html)
 
 ---
 
