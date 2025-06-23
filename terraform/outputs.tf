@@ -125,3 +125,8 @@ output "cloudwatch_memory_alarm_arn" {
   description = "ARN of the high memory utilization alarm."
   value       = aws_cloudwatch_metric_alarm.ecs_high_memory.arn
 }
+
+output "alb_dns_name" {
+  description = "The DNS name of the Application Load Balancer for Strapi."
+  value       = aws_lb.strapi.dns_name
+}

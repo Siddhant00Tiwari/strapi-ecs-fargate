@@ -1,0 +1,1 @@
+// Minimal strapi-server.js for healthcheck plugin 

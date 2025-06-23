@@ -98,14 +98,17 @@ resource "aws_ecs_task_definition" "strapi" {
   ])
 }
 
-# ECS Service
+# ECS Service using FARGATE_SPOT
 resource "aws_ecs_service" "strapi" {
   name            = "strapi-service"
   cluster         = aws_ecs_cluster.cluster.id
   task_definition = aws_ecs_task_definition.strapi.arn
   desired_count   = 1
-  launch_type     = "FARGATE"
-
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    base              = 0
+    weight            = 1
+  }
   network_configuration {
     subnets          = data.aws_subnets.public.ids
     security_groups  = [aws_security_group.sg.id]
@@ -214,12 +217,39 @@ resource "aws_cloudwatch_metric_alarm" "ecs_high_memory" {
 
 ### Key Features:
 - **Multi-container setup**: Strapi + PostgreSQL in the same task
+- **Fargate Spot**: Cost-effective compute using FARGATE_SPOT capacity provider
+- **Capacity provider strategy**: All tasks run on FARGATE_SPOT (see below for details)
 - **Fargate launch type**: Serverless container execution
 - **Public subnets**: Auto-discovers public subnets in the VPC
 - **Security groups**: Allows HTTP access on port 1337
 - **Environment variables**: Secure configuration via GitHub secrets
 - **CloudWatch monitoring**: Logs, metrics, dashboard, and alarms
 - **Remote state**: S3 backend with native state locking (object lock enabled)
+
+## ⚡️ Fargate Spot & Capacity Provider Strategy
+
+### What is Fargate Spot?
+- **Fargate Spot** lets you run ECS tasks at a significant discount compared to standard Fargate pricing.
+- **Caveat:** AWS can interrupt (stop) Fargate Spot tasks at any time if capacity is needed elsewhere. Use for workloads that can tolerate interruptions.
+
+### Capacity Provider Strategy in This Project
+
+```hcl
+capacity_provider_strategy {
+  capacity_provider = "FARGATE_SPOT"
+  base              = 0
+  weight            = 1
+}
+```
+- **All tasks** will be placed on FARGATE_SPOT.
+- **base = 0**: No minimum number of tasks required on this provider before using others (not relevant here since only one provider is used).
+- **weight = 1**: All tasks go to FARGATE_SPOT (if you had multiple providers, this would control the proportion).
+
+#### What are base and weight?
+- **base**: Minimum number of tasks to run on this provider before using others.
+- **weight**: Proportion of tasks to place on this provider after the base is satisfied (relative to other providers).
+
+**Example:** If you had both FARGATE and FARGATE_SPOT, you could set base/weight to split tasks between them for cost and reliability.
 
 ## 📊 Monitoring & Observability
 

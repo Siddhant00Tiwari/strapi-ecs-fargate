@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy rest of the application
 COPY . .
@@ -17,21 +17,20 @@ COPY . .
 RUN npm run build
 
 # ------------------------------
-# Production stage
+# Development stage
 # ------------------------------
 FROM node:20-alpine
 
-# Add production deps only
 WORKDIR /app
 
-# Copy only necessary files from build stage
+# Copy everything from build stage
 COPY --from=builder /app /app
 
 # Expose the port Strapi runs on
 EXPOSE 1337
 
-# Define environment variables if needed
-ENV NODE_ENV=production
+# Set environment for development
+ENV NODE_ENV=development
 
-# Start the application
-CMD ["npm", "start"]
+# Start Strapi in development mode
+CMD ["npm", "run", "develop"]

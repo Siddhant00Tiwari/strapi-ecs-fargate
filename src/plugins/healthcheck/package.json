@@ -1,0 +1,21 @@
+{
+  "name": "healthcheck",
+  "version": "0.0.0",
+  "description": "First party app plugin to ensure /health route is available",
+  "strapi": {
+    "name": "Health Check",
+    "description": "[1st Party] Ensures /health route is available",
+    "kind": "plugin",
+    "displayName": "Health Check"
+  },
+  "maintainers": [
+    {
+      "name": "Adedoyin Akande"
+    }
+  ],
+  "engines": {
+    "node": ">=18.0.0 <=20.x.x",
+    "npm": ">=6.0.0"
+  },
+  "license": "MIT"
+} 

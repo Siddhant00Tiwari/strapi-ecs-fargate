@@ -1,5 +1,7 @@
 // import type { Core } from '@strapi/strapi';
 
+// Adding custom /health route via healthcheck plugin
+
 export default {
   /**
    * An asynchronous register function that runs before

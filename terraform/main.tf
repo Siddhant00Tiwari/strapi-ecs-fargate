@@ -104,20 +104,98 @@ resource "aws_ecs_task_definition" "strapi" {
   ])
 }
 
+# --- ALB Security Group ---
+resource "aws_security_group" "alb_sg" {
+  name        = "strapi-alb-sg"
+  description = "Allow HTTP to ALB"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# --- ALB ---
+resource "aws_lb" "strapi" {
+  name               = "strapi-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = data.aws_subnets.public.ids
+}
+
+# --- Target Group ---
+resource "aws_lb_target_group" "strapi" {
+  name        = "strapi-tg"
+  port        = 1337
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+  health_check {
+    path                = "/health"
+    protocol            = "HTTP"
+    matcher             = "200-399"
+    interval            = 60
+    timeout             = 30
+    healthy_threshold   = 5
+    unhealthy_threshold = 5
+  }
+}
+
+# --- Listener ---
+resource "aws_lb_listener" "strapi_http" {
+  load_balancer_arn = aws_lb.strapi.arn
+  port              = 80
+  protocol          = "HTTP"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.strapi.arn
+  }
+}
+
+# --- Update ECS Security Group to only allow ALB ---
+resource "aws_security_group_rule" "ecs_from_alb" {
+  type                     = "ingress"
+  from_port                = 1337
+  to_port                  = 1337
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.sg.id
+  source_security_group_id = aws_security_group.alb_sg.id
+  description              = "Allow ALB to ECS on 1337"
+}
+
+# --- Update ECS Service to use ALB ---
 resource "aws_ecs_service" "strapi" {
   name            = "strapi-service"
   cluster         = aws_ecs_cluster.cluster.id
   task_definition = aws_ecs_task_definition.strapi.arn
   desired_count   = 1
   capacity_provider_strategy {
-    capacity_provider = "FARGATE_SPOT"
+    capacity_provider = "FARGATE"
     weight            = 1
   }
+  load_balancer {
+    target_group_arn = aws_lb_target_group.strapi.arn
+    container_name   = "strapi"
+    container_port   = 1337
+  }
   network_configuration {
-    subnets          = data.aws_subnets.public.ids
-    security_groups  = [aws_security_group.sg.id]
+    subnets         = data.aws_subnets.public.ids
+    security_groups = [aws_security_group.sg.id]
     assign_public_ip = true
   }
+  depends_on = [aws_lb_listener.strapi_http]
 }
 
 resource "aws_cloudwatch_dashboard" "ecs_strapi" {
