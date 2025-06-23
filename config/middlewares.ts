@@ -1,8 +1,15 @@
-export default [
+module.exports = [
   'strapi::logger',
   'strapi::errors',
   'strapi::security',
-  'strapi::cors',
+  {
+    name: 'strapi::cors',
+    config: {
+      enabled: true,
+      origin: ['*'],
+      credentials: true,
+    },
+  },
   'strapi::poweredBy',
   'strapi::query',
   'strapi::body',
@@ -10,12 +17,3 @@ export default [
   'strapi::favicon',
   'strapi::public',
 ];
-module.exports = ({ env }) => ({
-  settings: {
-    cors: {
-      enabled: true,
-      origin: ['*'], // allow all origins
-    },
-  },
-});
-
